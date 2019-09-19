@@ -2,17 +2,27 @@ package main
 
 import (
 	"fmt"
-//	"os"
+	"os"
 	//"bytes"
 	"net"
 	"time"
+	"strconv"
 
 	"github.com/pion/dtls"
 	"github.com/pion/dtls/examples/util"
 )
 
-func main() {// Prepare the IP to connect to
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 4444}
+func main() {
+	args := os.Args[1:]
+	if len(args) == 0 {
+		fmt.Println("Usage go run main/main.go port_number")
+		return
+	}
+	port, _ := strconv.Atoi(args[0])
+	fmt.Println("Port: ",port)
+
+	// Prepare the IP to connect to
+	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port}
 
 	//
 	// Everything below is the pion-DTLS API! Thanks for using it ❤️.
@@ -22,11 +32,11 @@ func main() {// Prepare the IP to connect to
 	config := &dtls.Config{
 		PSK: func(hint []byte) ([]byte, error) {
 			fmt.Printf("Client's hint: %s \n", hint)
-			return []byte{0xAB, 0xC1, 0x23}, nil
+			return []byte{0x12, 0x34}, nil
 		},
 		PSKIdentityHint:      []byte("Pion DTLS Client"),
 		CipherSuites:         []dtls.CipherSuiteID{dtls.TLS_PSK_WITH_AES_128_CCM_8},
-		ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
+		//ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
 		ConnectTimeout:       dtls.ConnectTimeoutOption(200 * time.Second),
 	}
 
