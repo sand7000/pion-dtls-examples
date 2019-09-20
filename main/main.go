@@ -49,7 +49,7 @@ func main() {
 		PSKIdentityHint: []byte("Pion DTLS Client"),
 		CipherSuites:    []dtls.CipherSuiteID{dtls.TLS_PSK_WITH_AES_128_CCM_8},
 		//ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
-		ConnectTimeout: dtls.ConnectTimeoutOption(200 * time.Second),
+		//ConnectTimeout: dtls.ConnectTimeoutOption(200 * time.Second),
 	}
 
 	// Connect to a DTLS server
@@ -60,7 +60,7 @@ func main() {
 	// This function is called after the main method has ended
 	defer func() {
 		fmt.Println("Closing Listener")
-		util.Check(listener.Close(1 * time.Second))
+		util.Check(listener.Close(0 * time.Second))
 	}()
 
 	if rstPort == -1 {
@@ -70,13 +70,15 @@ func main() {
 		rstAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: rstPort}
 		rstConn, err := net.ListenUDP("udp", rstAddr)
 		util.Check(err)
-		var rstTimeoutDuration time.Duration = time.Duration(rstTimeout)
-		readDeadline := time.Now().Add(rstTimeoutDuration * time.Second)
-		rstConn.SetReadDeadline(readDeadline)
 		for {
 			buffer := make([]byte, BUFF_SIZE)
+                        var rstTimeoutDuration time.Duration = time.Duration(rstTimeout)
+	                readDeadline := time.Now().Add(rstTimeoutDuration * time.Second)
+        	        rstConn.SetReadDeadline(readDeadline)
 			_, err = rstConn.Read(buffer)
 			util.Check(err)
+			fmt.Println("Received command to process")
+
 			go func() {
 				processOnce(listener)
 			}()
@@ -85,9 +87,15 @@ func main() {
 }
 
 func processOnce(listener *dtls.Listener) {
+	fmt.Println("Ready to process")
+        defer func() {
+                fmt.Println("Finished Processing")
+        }()
 	conn, err := listener.Accept()
-	util.Check(err)
-	handle(conn)
+	if err == nil {
+	//util.Check(err)
+		handle(conn)
+	}
 }
 
 func handle(conn net.Conn) {
