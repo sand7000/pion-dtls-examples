@@ -22,7 +22,10 @@ const BuffSize = 2000
 // DefRstTimeout represents the default timeout before the reset socket is closed
 const DefRstTimeout = 10
 
+// this is a very dirty go harness
+
 func main() {
+	// I wish Go had this function
 	// os.setDefaultSockopts(syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -75,10 +78,18 @@ func main() {
 	go func() {
 		for range c {
 			fmt.Println("Received Signal")
+
+			// I attempted to kill via reflection by calling Close on the parent field
+			// unfortunately, it turned out that in golang you cannot call methods
+			// on unexported fields
 			rl := reflect.ValueOf(listener)
 			fv := rl.Elem().FieldByName("parent")
 			examiner(fv.Type(), 2)
+
+			// Exit will terminate the main program and any goroutines
 			os.Exit(0)
+
+			// listener.Close blocks unfortunately while Accept is blocking so it cannot be used
 			//util.Check(listener.Close(0 * time.Second))
 		}
 	}()
@@ -127,6 +138,8 @@ func handle(conn net.Conn) {
 	conn.Write(buffer)
 }
 
+// Helpful function copied from:
+// https://medium.com/capital-one-tech/learning-to-use-go-reflection-822a0aed74b7
 func examiner(t reflect.Type, depth int) {
 	fmt.Println(strings.Repeat("\t", depth), "Type is", t.Name(), "and kind is", t.Kind())
 	switch t.Kind() {
