@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"net"
 	"strconv"
@@ -12,8 +14,11 @@ import (
 	"github.com/pion/dtls/examples/util"
 )
 
-const BUFF_SIZE = 2000
-const DEF_RST_TIMEOUT = 10
+// BuffSize representize the size used to instantiate byte arrays
+const BuffSize = 2000
+
+// DefRstTimeout represents the default timeout before the reset socket is closed
+const DefRstTimeout = 10
 
 func main() {
 	// os.setDefaultSockopts(syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
@@ -25,7 +30,7 @@ func main() {
 	port, _ := strconv.Atoi(args[0])
 	fmt.Println("Port: ", port)
 	var rstPort int = -1
-	var rstTimeout int = DEF_RST_TIMEOUT
+	var rstTimeout int = DefRstTimeout
 	if len(args) > 1 {
 		rstPort, _ = strconv.Atoi(args[1])
 		if len(args) > 1 {
@@ -63,6 +68,15 @@ func main() {
 		util.Check(listener.Close(0 * time.Second))
 	}()
 
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
+	go func() {
+		for range c {
+			fmt.Println("Received Signal")
+			util.Check(listener.Close(0 * time.Second))
+		}
+	}()
+
 	if rstPort == -1 {
 		fmt.Println("Listening once")
 		processOnce(listener)
@@ -71,10 +85,10 @@ func main() {
 		rstConn, err := net.ListenUDP("udp", rstAddr)
 		util.Check(err)
 		for {
-			buffer := make([]byte, BUFF_SIZE)
-                        var rstTimeoutDuration time.Duration = time.Duration(rstTimeout)
-	                readDeadline := time.Now().Add(rstTimeoutDuration * time.Second)
-        	        rstConn.SetReadDeadline(readDeadline)
+			buffer := make([]byte, BuffSize)
+			var rstTimeoutDuration time.Duration = time.Duration(rstTimeout)
+			readDeadline := time.Now().Add(rstTimeoutDuration * time.Second)
+			rstConn.SetReadDeadline(readDeadline)
 			_, err = rstConn.Read(buffer)
 			util.Check(err)
 			fmt.Println("Received command to process")
@@ -88,18 +102,19 @@ func main() {
 
 func processOnce(listener *dtls.Listener) {
 	fmt.Println("Ready to process")
-        defer func() {
-                fmt.Println("Finished Processing")
-        }()
+	defer func() {
+		fmt.Println("Finished Processing")
+	}()
 	conn, err := listener.Accept()
+	fmt.Println("Exited Accept")
 	if err == nil {
-	//util.Check(err)
+		//util.Check(err)
 		handle(conn)
 	}
 }
 
 func handle(conn net.Conn) {
-	buffer := make([]byte, BUFF_SIZE)
+	buffer := make([]byte, BuffSize)
 	n, err := conn.Read(buffer)
 	util.Check(err)
 	fmt.Println("Read ", n)
