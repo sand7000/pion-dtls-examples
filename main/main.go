@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"net"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -73,7 +75,11 @@ func main() {
 	go func() {
 		for range c {
 			fmt.Println("Received Signal")
-			util.Check(listener.Close(0 * time.Second))
+			rl := reflect.ValueOf(listener)
+			fv := rl.Elem().FieldByName("parent")
+			examiner(fv.Type(), 2)
+			os.Exit(0)
+			//util.Check(listener.Close(0 * time.Second))
 		}
 	}()
 
@@ -119,4 +125,27 @@ func handle(conn net.Conn) {
 	util.Check(err)
 	fmt.Println("Read ", n)
 	conn.Write(buffer)
+}
+
+func examiner(t reflect.Type, depth int) {
+	fmt.Println(strings.Repeat("\t", depth), "Type is", t.Name(), "and kind is", t.Kind())
+	switch t.Kind() {
+	case reflect.Array, reflect.Chan, reflect.Map, reflect.Ptr, reflect.Slice:
+		fmt.Println("NumMethods: ", t.NumMethod())
+		for i := 0; i < t.NumMethod(); i++ {
+			m := t.Method(i)
+			fmt.Println(strings.Repeat("\t", depth+1), "Method", i+1, "name is", m.Name)
+		}
+		fmt.Println(strings.Repeat("\t", depth+1), "Contained type:")
+		examiner(t.Elem(), depth+1)
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			fmt.Println(strings.Repeat("\t", depth+1), "Field", i+1, "name is", f.Name, "type is", f.Type.Name(), "and kind is", f.Type.Kind())
+			if f.Tag != "" {
+				fmt.Println(strings.Repeat("\t", depth+2), "Tag is", f.Tag)
+				fmt.Println(strings.Repeat("\t", depth+2), "tag1 is", f.Tag.Get("tag1"), "tag2 is", f.Tag.Get("tag2"))
+			}
+		}
+	}
 }
