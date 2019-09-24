@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,30 +30,52 @@ const FlightSeconds = 100
 func main() {
 
 	// create map of supported cipher suites
-	m := make(map[string]dtls.CipherSuiteID)
-	m["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-	m["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-	m["TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
-	m["TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
-	m["TLS_PSK_WITH_AES_128_CCM_8"] = dtls.TLS_PSK_WITH_AES_128_CCM_8
-	m["TLS_PSK_WITH_AES_128_GCM_SHA256"] = dtls.TLS_PSK_WITH_AES_128_GCM_SHA256
+	csMap := make(map[string]dtls.CipherSuiteID)
+	csMap["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+	csMap["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	csMap["TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+	csMap["TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+	csMap["TLS_PSK_WITH_AES_128_CCM_8"] = dtls.TLS_PSK_WITH_AES_128_CCM_8
+	csMap["TLS_PSK_WITH_AES_128_GCM_SHA256"] = dtls.TLS_PSK_WITH_AES_128_GCM_SHA256
+
+	// create map of supported client authentication types
+	caMap := make(map[string]dtls.ClientAuthType)
+	caMap["DISABLED"] = dtls.NoClientCert
+	caMap["WANTED"] = dtls.RequestClientCert
+	caMap["NEEDED"] = dtls.RequireAndVerifyClientCert
 
 	// I wish Go had this function
 	// os.setDefaultSockopts(syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: go run main/main.go port_number [cipher_suite]")
+		fmt.Println("Usage: go run main/main.go port_number [cipher_suite [client_auth [trust_cert]]]")
 		return
 	}
 	port, _ := strconv.Atoi(args[0])
 	fmt.Println("Port: ", port)
 
+	// configuration variables
 	var cipherSuiteID dtls.CipherSuiteID = dtls.TLS_PSK_WITH_AES_128_CCM_8
 	var cipherSuiteName = "TLS_PSK_WITH_AES_128_CCM_8"
+	var trustCert string = ""
+	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
+	var contains bool
 
 	if len(args) > 1 {
 		cipherSuiteName = args[1]
-		cipherSuiteID = m[cipherSuiteName]
+		cipherSuiteID, contains = csMap[cipherSuiteName]
+		if !contains {
+			panic("Cipher suite " + cipherSuiteName + " not supported")
+		}
+		if len(args) > 2 {
+			clientAuth, contains = caMap[args[2]]
+			if !contains {
+				panic("Client authentication mechanism " + args[2] + " not supported")
+			}
+			if len(args) > 3 {
+				trustCert = args[3]
+			}
+		}
 	}
 
 	// Prepare the IP to connect to
@@ -80,14 +104,28 @@ func main() {
 	} else {
 		// Generate a certificate and private key to secure the connection
 		certificate, privateKey, err := dtls.GenerateSelfSigned()
-
 		util.Check(err)
+
+		// If a trusted certficate was provided, fetch it
+		var rootCAs *x509.CertPool = nil
+		if len(trustCert) > 0 {
+			dat, err := ioutil.ReadFile(trustCert)
+			util.Check(err)
+			rootCAs = x509.NewCertPool()
+			succ := rootCAs.AppendCertsFromPEM(dat)
+			if !succ {
+				panic("Was not successful in parsing certificate")
+			}
+		}
+
 		config = &dtls.Config{
 			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
 			FlightInterval:       FlightSeconds * time.Second,
 			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
 			Certificate:          certificate,
 			PrivateKey:           privateKey,
+			ClientAuth:           clientAuth,
+			RootCAs:              rootCAs,
 		}
 	}
 
