@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	s "strings"
 	"syscall"
 
 	"net"
@@ -16,51 +17,78 @@ import (
 	"github.com/pion/dtls/examples/util"
 )
 
-// BuffSize representize the size used to instantiate byte arrays
+// BuffSize represents the size used to instantiate byte arrays
 const BuffSize = 2000
 
-// DefRstTimeout represents the default timeout before the reset socket is closed
-const DefRstTimeout = 10
+// FlightSeconds is the flight retransmission timeout
+const FlightSeconds = 100
 
 // this is a very dirty go harness
 
 func main() {
+
+	// create map of supported cipher suites
+	m := make(map[string]dtls.CipherSuiteID)
+	m["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+	m["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"] = dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	m["TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+	m["TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"] = dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+	m["TLS_PSK_WITH_AES_128_CCM_8"] = dtls.TLS_PSK_WITH_AES_128_CCM_8
+	m["TLS_PSK_WITH_AES_128_GCM_SHA256"] = dtls.TLS_PSK_WITH_AES_128_GCM_SHA256
+
 	// I wish Go had this function
 	// os.setDefaultSockopts(syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: go run main/main.go port_number [rst_port_number [rst_timeout]]")
+		fmt.Println("Usage: go run main/main.go port_number [cipher_suite]")
 		return
 	}
 	port, _ := strconv.Atoi(args[0])
 	fmt.Println("Port: ", port)
-	var rstPort int = -1
-	var rstTimeout int = DefRstTimeout
+
+	var cipherSuiteID dtls.CipherSuiteID = dtls.TLS_PSK_WITH_AES_128_CCM_8
+	var cipherSuiteName = "TLS_PSK_WITH_AES_128_CCM_8"
+
 	if len(args) > 1 {
-		rstPort, _ = strconv.Atoi(args[1])
-		if len(args) > 1 {
-			rstTimeout, _ = strconv.Atoi(args[2])
-		}
+		cipherSuiteName = args[1]
+		cipherSuiteID = m[cipherSuiteName]
 	}
 
 	// Prepare the IP to connect to
 	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port}
+
+	fmt.Println("Using cipher suite ", cipherSuiteName, " with id ", cipherSuiteID)
 
 	//
 	// Everything below is the pion-DTLS API! Thanks for using it ❤️.
 	//
 
 	// Prepare the configuration of the DTLS connection
-	config := &dtls.Config{
-		PSK: func(hint []byte) ([]byte, error) {
-			fmt.Printf("Client's hint: %s \n", hint)
-			return []byte{0x12, 0x34}, nil
-		},
-		PSKIdentityHint: []byte("Pion DTLS Client"),
-		CipherSuites:    []dtls.CipherSuiteID{dtls.TLS_PSK_WITH_AES_128_CCM_8},
-	        FlightInterval: 100 * time.Second,
-		//ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
-		//ConnectTimeout: dtls.ConnectTimeoutOption(200 * time.Second),
+	// Note that PSK and ECDHE cipher suites cannot be combined
+	var config *dtls.Config
+	if s.Contains(cipherSuiteName, "PSK") {
+		config = &dtls.Config{
+			PSK: func(hint []byte) ([]byte, error) {
+				fmt.Printf("Client's hint: %s \n", hint)
+				return []byte{0x12, 0x34}, nil
+			},
+			PSKIdentityHint:      []byte("Pion DTLS Client"),
+			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
+			FlightInterval:       FlightSeconds * time.Second,
+			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
+		}
+	} else {
+		// Generate a certificate and private key to secure the connection
+		certificate, privateKey, err := dtls.GenerateSelfSigned()
+
+		util.Check(err)
+		config = &dtls.Config{
+			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
+			FlightInterval:       FlightSeconds * time.Second,
+			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
+			Certificate:          certificate,
+			PrivateKey:           privateKey,
+		}
 	}
 
 	// Connect to a DTLS server
@@ -80,42 +108,27 @@ func main() {
 		for range c {
 			fmt.Println("Received Signal")
 
-			// I attempted to kill via reflection by calling Close on the parent field
-			// unfortunately, it turned out that in golang you cannot call methods
+			// Trying to kill server and the unbind address:
+
+			// Attempt 1: kill via reflection by calling Close on the parent field.
+			// It turned out that in golang you cannot call methods
 			// on unexported fields
 			// rl := reflect.ValueOf(listener)
 			// fv := rl.Elem().FieldByName("parent")
 			// examiner(fv.Type(), 2)
 
-			// Exit will terminate the main program and any goroutines
-			os.Exit(0)
+			// Attempt 2: call listener.Close.
+			// Close blocks while Accept is blocking so it cannot be used.
+			// util.Check(listener.Close(0 * time.Second))
 
-			// listener.Close blocks unfortunately while Accept is blocking so it cannot be used
-			//util.Check(listener.Close(0 * time.Second))
+			// Attempt 3: call os.exit
+			// Bingo! Exit will terminate the main program and any goroutines
+			os.Exit(0)
 		}
 	}()
 
-	if rstPort == -1 {
-		fmt.Println("Listening once")
-		processOnce(listener)
-	} else {
-		rstAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: rstPort}
-		rstConn, err := net.ListenUDP("udp", rstAddr)
-		util.Check(err)
-		for {
-			buffer := make([]byte, BuffSize)
-			var rstTimeoutDuration time.Duration = time.Duration(rstTimeout)
-			readDeadline := time.Now().Add(rstTimeoutDuration * time.Second)
-			rstConn.SetReadDeadline(readDeadline)
-			_, err = rstConn.Read(buffer)
-			util.Check(err)
-			fmt.Println("Received command to process")
-
-			go func() {
-				processOnce(listener)
-			}()
-		}
-	}
+	fmt.Println("Listening once")
+	processOnce(listener)
 }
 
 func processOnce(listener *dtls.Listener) {
