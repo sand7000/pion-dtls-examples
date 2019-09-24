@@ -58,6 +58,7 @@ func main() {
 		},
 		PSKIdentityHint: []byte("Pion DTLS Client"),
 		CipherSuites:    []dtls.CipherSuiteID{dtls.TLS_PSK_WITH_AES_128_CCM_8},
+	        FlightInterval: 100 * time.Second,
 		//ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
 		//ConnectTimeout: dtls.ConnectTimeoutOption(200 * time.Second),
 	}
@@ -82,9 +83,9 @@ func main() {
 			// I attempted to kill via reflection by calling Close on the parent field
 			// unfortunately, it turned out that in golang you cannot call methods
 			// on unexported fields
-			rl := reflect.ValueOf(listener)
-			fv := rl.Elem().FieldByName("parent")
-			examiner(fv.Type(), 2)
+			// rl := reflect.ValueOf(listener)
+			// fv := rl.Elem().FieldByName("parent")
+			// examiner(fv.Type(), 2)
 
 			// Exit will terminate the main program and any goroutines
 			os.Exit(0)
