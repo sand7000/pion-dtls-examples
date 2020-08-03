@@ -2,17 +2,15 @@ package main
 
 import (
 	"crypto/x509"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
-	s "strings"
 	"syscall"
 
 	"net"
-	"reflect"
-	"strconv"
 	"time"
 
 	"github.com/pion/dtls"
@@ -24,6 +22,22 @@ const BuffSize = 2000
 
 // FlightSeconds is the flight retransmission timeout
 const FlightSeconds = 100
+
+const (
+	// Server role
+	Server string = "server"
+	// Client role
+	Client string = "client"
+)
+
+const (
+	// DISABLED Client certificate authentication is disabled
+	DISABLED string = "DISABLED"
+	// WANTED Client certificate is requested but not required
+	WANTED string = "WANTED"
+	// NEEDED Client certificate is requested and required
+	NEEDED string = "NEEDED"
+)
 
 // this is a very dirty go harness
 
@@ -40,42 +54,54 @@ func main() {
 
 	// create map of supported client authentication types
 	caMap := make(map[string]dtls.ClientAuthType)
-	caMap["DISABLED"] = dtls.NoClientCert
-	caMap["WANTED"] = dtls.RequestClientCert
-	caMap["NEEDED"] = dtls.RequireAndVerifyClientCert
+	caMap[DISABLED] = dtls.NoClientCert
+	caMap[WANTED] = dtls.RequestClientCert
+	caMap[NEEDED] = dtls.RequireAndVerifyClientCert
 
-	// I wish Go had this function
-	// os.setDefaultSockopts(syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-	args := os.Args[1:]
-	if len(args) == 0 {
-		fmt.Println("Usage: go run main/main.go port_number [cipher_suite [client_auth [trust_cert]]]")
+	// commmand line/configuration variables
+	var port int
+	var role string
+	var cipherSuiteName string
+	var cipherSuiteID dtls.CipherSuiteID = dtls.TLS_PSK_WITH_AES_128_CCM_8
+	var clientAuthName string
+	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
+	var trustCert string = ""
+	var help bool
+
+	flag.StringVar(&role, "role", "server", "Role {client,server}")
+	flag.IntVar(&port, "port", 0, "Listening port the in case of servers/connect port in the case of clients (Required)")
+	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
+	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
+	flag.StringVar(&trustCert, "trustCert", "", "Trusted certificate in .pem format")
+	flag.BoolVar(&help, "help", false, "Show usage screen")
+
+	flag.Parse()
+
+	if help {
+		flag.PrintDefaults()
 		return
 	}
-	port, _ := strconv.Atoi(args[0])
-	fmt.Println("Port: ", port)
 
-	// configuration variables
-	var cipherSuiteID dtls.CipherSuiteID = dtls.TLS_PSK_WITH_AES_128_CCM_8
-	var cipherSuiteName = "TLS_PSK_WITH_AES_128_CCM_8"
-	var trustCert string = ""
-	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
+	if port == 0 {
+		fmt.Println("No port has been provided")
+		flag.PrintDefaults()
+		return
+	}
+
+	if role != Client && role != Server {
+		panic("Role " + role + " is invalid")
+	}
+
 	var contains bool
 
-	if len(args) > 1 {
-		cipherSuiteName = args[1]
-		cipherSuiteID, contains = csMap[cipherSuiteName]
-		if !contains {
-			panic("Cipher suite " + cipherSuiteName + " not supported")
-		}
-		if len(args) > 2 {
-			clientAuth, contains = caMap[args[2]]
-			if !contains {
-				panic("Client authentication mechanism " + args[2] + " not supported")
-			}
-			if len(args) > 3 {
-				trustCert = args[3]
-			}
-		}
+	cipherSuiteID, contains = csMap[cipherSuiteName]
+	if !contains {
+		panic("Cipher suite " + cipherSuiteName + " not supported")
+	}
+
+	clientAuth, contains = caMap[clientAuthName]
+	if !contains {
+		panic("Client authentication mechanism " + clientAuthName + " not supported")
 	}
 
 	// Prepare the IP to connect to
@@ -90,7 +116,8 @@ func main() {
 	// Prepare the configuration of the DTLS connection
 	// Note that PSK and ECDHE cipher suites cannot be combined
 	var config *dtls.Config
-	if s.Contains(cipherSuiteName, "PSK") {
+
+	if strings.Contains(cipherSuiteName, "PSK") {
 		config = &dtls.Config{
 			PSK: func(hint []byte) ([]byte, error) {
 				fmt.Printf("Client's hint: %s \n", hint)
@@ -129,44 +156,35 @@ func main() {
 		}
 	}
 
-	// Connect to a DTLS server
-	listener, err := dtls.Listen("udp", addr, config)
-	util.Check(err)
+	if role == Server {
+		// Bind to server listening address
+		listener, err := dtls.Listen("udp", addr, config)
+		util.Check(err)
 
-	// We define a deferred function to close the listener.
-	// This function is called after the main method has ended
-	defer func() {
-		fmt.Println("Closing Listener")
-		util.Check(listener.Close(0 * time.Second))
-	}()
+		// We define a deferred function to close the listener.
+		// This function is called after the main method has ended
+		defer func() {
+			fmt.Println("Closing Listener")
+			util.Check(listener.Close(0 * time.Second))
+		}()
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
-	go func() {
-		for range c {
-			fmt.Println("Received Signal")
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGKILL)
+		go func() {
+			for range c {
+				fmt.Println("Received Signal")
+				os.Exit(0)
+			}
+		}()
 
-			// Trying to kill server and the unbind address:
-
-			// Attempt 1: kill via reflection by calling Close on the parent field.
-			// It turned out that in golang you cannot call methods
-			// on unexported fields
-			// rl := reflect.ValueOf(listener)
-			// fv := rl.Elem().FieldByName("parent")
-			// examiner(fv.Type(), 2)
-
-			// Attempt 2: call listener.Close.
-			// Close blocks while Accept is blocking so it cannot be used.
-			// util.Check(listener.Close(0 * time.Second))
-
-			// Attempt 3: call os.exit
-			// Bingo! Exit will terminate the main program and any goroutines
-			os.Exit(0)
-		}
-	}()
-
-	fmt.Println("Listening once")
-	processOnce(listener)
+		fmt.Println("Listening once")
+		processOnce(listener)
+	} else if role == Client {
+		// Connect to a DTLS server
+		conn, err := dtls.Dial("udp", addr, config)
+		util.Check(err)
+		handle(conn)
+	}
 }
 
 func processOnce(listener *dtls.Listener) {
@@ -188,29 +206,4 @@ func handle(conn net.Conn) {
 	util.Check(err)
 	fmt.Println("Read ", n)
 	conn.Write(buffer)
-}
-
-// Helpful function copied from:
-// https://medium.com/capital-one-tech/learning-to-use-go-reflection-822a0aed74b7
-func examiner(t reflect.Type, depth int) {
-	fmt.Println(strings.Repeat("\t", depth), "Type is", t.Name(), "and kind is", t.Kind())
-	switch t.Kind() {
-	case reflect.Array, reflect.Chan, reflect.Map, reflect.Ptr, reflect.Slice:
-		fmt.Println("NumMethods: ", t.NumMethod())
-		for i := 0; i < t.NumMethod(); i++ {
-			m := t.Method(i)
-			fmt.Println(strings.Repeat("\t", depth+1), "Method", i+1, "name is", m.Name)
-		}
-		fmt.Println(strings.Repeat("\t", depth+1), "Contained type:")
-		examiner(t.Elem(), depth+1)
-	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			fmt.Println(strings.Repeat("\t", depth+1), "Field", i+1, "name is", f.Name, "type is", f.Type.Name(), "and kind is", f.Type.Kind())
-			if f.Tag != "" {
-				fmt.Println(strings.Repeat("\t", depth+2), "Tag is", f.Tag)
-				fmt.Println(strings.Repeat("\t", depth+2), "tag1 is", f.Tag.Get("tag1"), "tag2 is", f.Tag.Get("tag2"))
-			}
-		}
-	}
 }
