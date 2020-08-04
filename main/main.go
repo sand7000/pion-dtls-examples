@@ -67,12 +67,14 @@ func main() {
 	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
 	var trustCert string = ""
 	var help bool
+	var serverName = ""
 
 	flag.StringVar(&role, "role", "server", "Role {client,server}")
 	flag.IntVar(&port, "port", 0, "Listening port the in case of servers/connect port in the case of clients (Required)")
 	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
 	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
 	flag.StringVar(&trustCert, "trustCert", "", "Trusted certificate in .pem format")
+	flag.StringVar(&serverName, "serverName", "", "Trusted certificate in .pem format")
 	flag.BoolVar(&help, "help", false, "Show usage screen")
 
 	flag.Parse()
@@ -153,6 +155,7 @@ func main() {
 			PrivateKey:           privateKey,
 			ClientAuth:           clientAuth,
 			RootCAs:              rootCAs,
+			ServerName:           serverName,
 		}
 	}
 
