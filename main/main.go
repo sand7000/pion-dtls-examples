@@ -1,20 +1,21 @@
 package main
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-
-	"net"
 	"time"
 
-	"github.com/pion/dtls"
-	"github.com/pion/dtls/examples/util"
+	"github.com/pion/dtls/v2"
+	"github.com/pion/dtls/v2/examples/util"
+	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
 )
 
 // BuffSize represents the size used to instantiate byte arrays
@@ -132,7 +133,7 @@ func main() {
 		}
 	} else {
 		// Generate a certificate and private key to secure the connection
-		certificate, privateKey, err := dtls.GenerateSelfSigned()
+		certificate, err := selfsign.GenerateSelfSigned()
 		util.Check(err)
 
 		// If a trusted certficate was provided, fetch it
@@ -147,15 +148,18 @@ func main() {
 			}
 		}
 
+		// certificates = make(certficate)
+
 		config = &dtls.Config{
 			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
 			FlightInterval:       FlightSeconds * time.Second,
 			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
-			Certificate:          certificate,
-			PrivateKey:           privateKey,
+			Certificates:         []tls.Certificate{certificate},
 			ClientAuth:           clientAuth,
 			RootCAs:              rootCAs,
 			ServerName:           serverName,
+			InsecureHashes:       true,
+			SignatureSchemes:     []tls.SignatureScheme{tls.PKCS1WithSHA1, tls.ECDSAWithSHA1, tls.ECDSAWithP256AndSHA256},
 		}
 	}
 
@@ -168,7 +172,7 @@ func main() {
 		// This function is called after the main method has ended
 		defer func() {
 			fmt.Println("Closing Listener")
-			util.Check(listener.Close(0 * time.Second))
+			util.Check(listener.Close())
 		}()
 
 		c := make(chan os.Signal, 1)
@@ -190,7 +194,7 @@ func main() {
 	}
 }
 
-func processOnce(listener *dtls.Listener) {
+func processOnce(listener net.Listener) {
 	fmt.Println("Ready to process")
 	defer func() {
 		fmt.Println("Finished Processing")
