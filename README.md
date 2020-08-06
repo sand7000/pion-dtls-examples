@@ -17,7 +17,7 @@ Run the harness (to get the usage page).
 
 Alternatively, once PionDTLS is set up, you can compile and run the resulting binaries:
 
-> go build -o main/main main/main.go 
+> go build -o piondtls_2.0.2 main/main.go 
 
 > main/main
 
