@@ -19,5 +19,5 @@ Alternatively, once PionDTLS is set up, you can compile and run the resulting bi
 
 > go build -o piondtls_2.0.2 main/main.go 
 
-> main/main
+> ./piondtls_2.0.2
 
