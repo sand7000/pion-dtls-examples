@@ -86,7 +86,7 @@ func main() {
 	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
 	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
 	flag.StringVar(&operation, "operation", FULL, "Mode of operation {BASIC, ONE_ECHO, FULL}. BASIC means exit after handshake completion, ONE_ECHO means echo once, FULL means echo continuously until something bad happens.")
-	flag.StringVar(&trustCert, "trustCert", "", "Certificate(s) in .pem format of CAs a side trusts, used to check certificate received by the other peer.")
+	flag.StringVar(&trustCert, "trustCert", "", "Certificate(s) in .pem format of CAs a side trusts, used to check certificate received from the other peer.")
 	flag.StringVar(&serverName, "serverName", "", "The name the client uses to validate the certificate received from the server")
 	flag.StringVar(&clientCert, "clientCert", "", "Certificate(s) in .pem format of CAs used by the server to verify certificates received from the client. By default, the trusted certificates are used for this purpose.")
 	flag.BoolVar(&help, "help", false, "Show usage screen")
