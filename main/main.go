@@ -39,6 +39,15 @@ const (
 	NEEDED string = "NEEDED"
 )
 
+const (
+	// Complete handshake and exit
+	BASIC string = "BASIC"
+	// Echo once and exit
+	ONE_ECHO string = "ONE_ECHO"
+	// Continuous echo
+	FULL string = "FULL"
+)
+
 // this is a very dirty go harness
 
 func main() {
@@ -66,6 +75,7 @@ func main() {
 	var clientAuthName string
 	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
 	var trustCert string = ""
+	var operation string = ""
 	var help bool
 	var serverName = ""
 
@@ -73,8 +83,9 @@ func main() {
 	flag.IntVar(&port, "port", 0, "Listening port the in case of servers/connect port in the case of clients (Required)")
 	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
 	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
-	flag.StringVar(&trustCert, "trustCert", "", "Trusted certificate in .pem format")
-	flag.StringVar(&serverName, "serverName", "", "Trusted certificate in .pem format")
+	flag.StringVar(&operation, "operation", FULL, "Mode of operation {BASIC, ONE_ECHO, FULL}. BASIC means exit after handshake completion, ONE_ECHO means echo once, FULL means echo continuously until something bad happens.")
+	flag.StringVar(&trustCert, "trustCert", "", "Certificate(s) in .pem format of CAs a side trusts, used to check certificate received from the other peer.")
+	flag.StringVar(&serverName, "serverName", "", "The name the client uses to validate the certificate received from the server")
 	flag.BoolVar(&help, "help", false, "Show usage screen")
 
 	flag.Parse()
@@ -181,16 +192,16 @@ func main() {
 		}()
 
 		fmt.Println("Listening once")
-		processOnce(listener)
+		processOnce(listener, operation)
 	} else if role == Client {
 		// Connect to a DTLS server
 		conn, err := dtls.Dial("udp", addr, config)
 		util.Check(err)
-		handle(conn)
+		handle(conn, operation)
 	}
 }
 
-func processOnce(listener *dtls.Listener) {
+func processOnce(listener *dtls.Listener, operation string) {
 	fmt.Println("Ready to process")
 	defer func() {
 		fmt.Println("Finished Processing")
@@ -199,14 +210,21 @@ func processOnce(listener *dtls.Listener) {
 	fmt.Println("Exited Accept")
 	if err == nil {
 		//util.Check(err)
-		handle(conn)
+		handle(conn, operation)
 	}
 }
 
-func handle(conn net.Conn) {
-	buffer := make([]byte, BuffSize)
-	n, err := conn.Read(buffer)
-	util.Check(err)
-	fmt.Println("Read ", n)
-	conn.Write(buffer)
+func handle(conn net.Conn, operation string) {
+	if operation != BASIC {
+		buffer := make([]byte, BuffSize)
+		for true {
+			n, err := conn.Read(buffer)
+			util.Check(err)
+			fmt.Println("Read ", n)
+			conn.Write(buffer)
+			if operation == ONE_ECHO {
+				break
+			}
+		}
+	}
 }
