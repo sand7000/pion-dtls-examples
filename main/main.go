@@ -67,6 +67,7 @@ func main() {
 	var clientAuthName string
 	var clientAuth dtls.ClientAuthType = dtls.NoClientCert
 	var trustCert string = ""
+	var clientCert string = ""
 	var help bool
 	var serverName = ""
 
@@ -74,8 +75,9 @@ func main() {
 	flag.IntVar(&port, "port", 0, "Listening port the in case of servers/connect port in the case of clients (Required)")
 	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
 	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
-	flag.StringVar(&trustCert, "trustCert", "", "Trusted certificate in .pem format")
-	flag.StringVar(&serverName, "serverName", "", "Trusted certificate in .pem format")
+	flag.StringVar(&trustCert, "trustCert", "", "Certificate(s) in .pem format of CAs a side trusts, used to check certificate received by the other peer.")
+	flag.StringVar(&serverName, "serverName", "", "The name the client uses to validate the certificate received from the server")
+	flag.StringVar(&clientCert, "clientCert", "", "Certificate(s) in .pem format of CAs used by the server to verify certificates received from the client. By default, the trusted certificates are used for this purpose.")
 	flag.BoolVar(&help, "help", false, "Show usage screen")
 
 	flag.Parse()
@@ -148,6 +150,20 @@ func main() {
 			}
 		}
 
+		// If a client certificate was provided, fetch it, otherwise default to the trusted certificate
+		var clientCAs *x509.CertPool = nil
+		if len(clientCert) > 0 {
+			dat, err := ioutil.ReadFile(clientCert)
+			util.Check(err)
+			clientCAs = x509.NewCertPool()
+			succ := clientCAs.AppendCertsFromPEM(dat)
+			if !succ {
+				panic("Was not successful in parsing certificate")
+			}
+		} else {
+			clientCAs=rootCAs
+		}
+
 		// certificates = make(certficate)
 
 		config = &dtls.Config{
@@ -157,9 +173,11 @@ func main() {
 			Certificates:         []tls.Certificate{certificate},
 			ClientAuth:           clientAuth,
 			RootCAs:              rootCAs,
+			ClientCAs:			  clientCAs,
 			ServerName:           serverName,
 			InsecureHashes:       true,
 			SignatureSchemes:     []tls.SignatureScheme{tls.PKCS1WithSHA1, tls.ECDSAWithSHA1, tls.ECDSAWithP256AndSHA256},
+			//SignatureSchemes:     []tls.SignatureScheme{tls.PKCS1WithSHA1, tls.PKCS1WithSHA256, tls.PKCS1WithSHA384, tls.PKCS1WithSHA512, tls.ECDSAWithSHA1, tls.ECDSAWithP256AndSHA256, tls.ECDSAWithP384AndSHA384, tls.ECDSAWithP521AndSHA512},
 		}
 	}
 
