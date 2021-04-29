@@ -71,6 +71,8 @@ func main() {
 	// commmand line/configuration variables
 	var port int
 	var role string
+	var key string = ""
+	var cert string = ""
 	var cipherSuiteName string
 	var cipherSuiteID dtls.CipherSuiteID = dtls.TLS_PSK_WITH_AES_128_CCM_8
 	var clientAuthName string
@@ -83,6 +85,8 @@ func main() {
 
 	flag.StringVar(&role, "role", "server", "Role {client,server}")
 	flag.IntVar(&port, "port", 0, "Listening port the in case of servers/connect port in the case of clients (Required)")
+	flag.StringVar(&key, "key", "", "Private key in .pem format (if not specified along with certificate, automatically generated)")
+	flag.StringVar(&cert, "cert", "", "Public key in .pem format (if not specified along with private key, automatically generated)")
 	flag.StringVar(&cipherSuiteName, "cipherSuite", "TLS_PSK_WITH_AES_128_CCM_8", "Cipher suite to use {TLS_PSK_WITH_AES_128_CCM_8, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ..}")
 	flag.StringVar(&clientAuthName, "clientAuth", DISABLED, "Client authentication settings {DISABLED, NEEDED, WANTED}")
 	flag.StringVar(&operation, "operation", FULL, "Mode of operation {BASIC, ONE_ECHO, FULL}. BASIC means exit after handshake completion, ONE_ECHO means echo once, FULL means echo continuously until something bad happens.")
@@ -145,9 +149,17 @@ func main() {
 			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
 		}
 	} else {
+		var certificate tls.Certificate
 		// Generate a certificate and private key to secure the connection
-		certificate, err := selfsign.GenerateSelfSigned()
-		util.Check(err)
+		if len(key) > 0 && len(cert) > 0 {
+			loaded, err := util.LoadKeyAndCertificate(key, cert)
+			util.Check(err)
+			certificate = *loaded
+		} else {
+			generated, err := selfsign.GenerateSelfSigned()
+			util.Check(err)
+			certificate = *&generated
+		}
 
 		// If a trusted certficate was provided, fetch it
 		var rootCAs *x509.CertPool = nil
@@ -172,7 +184,7 @@ func main() {
 				panic("Was not successful in parsing certificate")
 			}
 		} else {
-			clientCAs=rootCAs
+			clientCAs = rootCAs
 		}
 
 		// certificates = make(certficate)
@@ -184,7 +196,7 @@ func main() {
 			Certificates:         []tls.Certificate{certificate},
 			ClientAuth:           clientAuth,
 			RootCAs:              rootCAs,
-			ClientCAs:			  clientCAs,
+			ClientCAs:            clientCAs,
 			ServerName:           serverName,
 			InsecureHashes:       true,
 			SignatureSchemes:     []tls.SignatureScheme{tls.PKCS1WithSHA1, tls.ECDSAWithSHA1, tls.ECDSAWithP256AndSHA256},
