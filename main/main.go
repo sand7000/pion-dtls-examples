@@ -139,7 +139,6 @@ func main() {
 			PSKIdentityHint:      []byte("Pion DTLS Client"),
 			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
 			FlightInterval:       FlightSeconds * time.Second,
-			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
 		}
 	} else {
 		// Generate a certificate and private key to secure the connection
@@ -161,7 +160,6 @@ func main() {
 		config = &dtls.Config{
 			CipherSuites:         []dtls.CipherSuiteID{cipherSuiteID},
 			FlightInterval:       FlightSeconds * time.Second,
-			ExtendedMasterSecret: dtls.DisableExtendedMasterSecret,
 			Certificate:          certificate,
 			PrivateKey:           privateKey,
 			ClientAuth:           clientAuth,
@@ -179,7 +177,7 @@ func main() {
 		// This function is called after the main method has ended
 		defer func() {
 			fmt.Println("Closing Listener")
-			util.Check(listener.Close(0 * time.Second))
+			util.Check(listener.Close())
 		}()
 
 		c := make(chan os.Signal, 1)
